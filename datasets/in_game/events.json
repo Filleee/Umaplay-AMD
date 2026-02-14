@@ -1,6 +1,112 @@
 [
 	{
 		"type": "support",
+		"name": "Matikanefukukitaru",
+		"rarity": "SSR",
+		"attribute": "SPD",
+		"choice_events": [
+			{
+				"type": "random",
+				"chain_step": 1,
+				"name": "Mystery Fortune Ritual!",
+				"options": {
+					"1": [
+						{
+							"speed": 7,
+							"stamina": 7,
+							"power": 7,
+							"guts": 7,
+							"wit": 7,
+							"bond": 7
+						},
+						{
+							"wit": 4
+						}
+					],
+					"2": [
+						{
+							"energy": 5,
+							"bond": 5
+						}
+					]
+				},
+				"default_preference": 1
+			},
+			{
+				"type": "chain",
+				"chain_step": 2,
+				"name": "Fortune Favors the Friends!",
+				"options": {
+					"1": [
+						{
+							"speed": 7,
+							"stamina": 7,
+							"power": 7,
+							"guts": 7,
+							"wit": 7,
+							"bond": 7
+						},
+						{
+							"wit": 4
+						}
+					],
+					"2": [
+						{
+							"energy": 5,
+							"bond": 5
+						}
+					]
+				},
+				"default_preference": 1
+			},
+			{
+				"type": "random",
+				"chain_step": 1,
+				"name": "Maximum Spirituality",
+				"options": {
+					"1": [
+						{
+							"wit": 5,
+							"skill_pts": 15,
+							"bond": 5
+						}
+					],
+					"2": [
+						{
+							"energy": -10,
+							"speed": 5,
+							"stamina": 5,
+							"power": 5,
+							"bond": 5
+						}
+					]
+				},
+				"default_preference": 1
+			},
+			{
+				"type": "random",
+				"chain_step": 1,
+				"name": "When Piety and Kindness Intersect",
+				"options": {
+					"1": [
+						{
+							"skill_pts": 30,
+							"bond": 5
+						}
+					],
+					"2": [
+						{
+							"energy": 20,
+							"bond": 5
+						}
+					]
+				},
+				"default_preference": 2
+			}
+		]
+	},
+	{
+		"type": "support",
 		"name": "Kitasan Black",
 		"rarity": "SSR",
 		"attribute": "SPD",

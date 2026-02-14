@@ -37,9 +37,12 @@ engine = LocalOCREngine()  # load once; keeps models on CPU/GPU as configured
 
 @app.get("/health")
 def health():
+    from core.gpu import get_torch_device, _has_directml
     return {
         "ok": True,
+        "gpu_backend": str(get_torch_device()),
         "cuda": torch.cuda.is_available(),
+        "directml": _has_directml(),
         "template_cache": {
             "size": len(_TEMPLATE_CACHE),
             "hits": _TEMPLATE_CACHE_STATS["hits"],

@@ -103,8 +103,9 @@ class UnityCupSpiritClassifier:
         The .pt must contain: state_dict, classes, img_size, arch.
         """
         bundle_path = Settings.UNITY_CUP_SPIRIT_COLOR_CLASS_PATH
-        # CPU by default; will use CUDA if available
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Use the best available GPU (CUDA / DirectML / CPU)
+        from core.gpu import get_torch_device
+        device = get_torch_device()
 
         ckpt = torch.load(bundle_path, map_location=device)
         classes = list(ckpt["classes"])

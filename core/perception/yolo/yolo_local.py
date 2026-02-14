@@ -1,10 +1,10 @@
 # core/perception/yolo/yolo_local.py
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
-from ultralytics.models import YOLO
 
 from core.perception.yolo.interface import IDetector
 from core.controllers.base import IController, RegionXYWH
@@ -15,10 +15,93 @@ from core.utils.img import pil_to_bgr
 from core.utils.logger import logger_uma
 
 
+# ---------------------------------------------------------------------------
+# Monkey-patch Ultralytics to support DirectML for ONNX inference.
+#
+# Ultralytics' autobackend.py (the ONNX branch):
+#   1. Hardcodes providers = ["CPUExecutionProvider"] and only adds CUDA.
+#      It never checks for DmlExecutionProvider (AMD/Intel GPU via DirectML).
+#   2. Runs check_requirements("onnxruntime") which pip-installs the plain
+#      onnxruntime package, clobbering our onnxruntime-directml.
+#   3. For static ONNX models, uses io_binding which is incompatible with DML.
+#
+# The patch wraps AutoBackend.__init__ to:
+#   - Re-create the ONNX session with DmlExecutionProvider
+#   - Force dynamic=True so the simpler session.run() path is used
+# ---------------------------------------------------------------------------
+
+def _patch_ultralytics_for_directml():
+    """Patch Ultralytics to use DirectML when onnxruntime-directml is installed."""
+    # Disable Ultralytics auto-install to prevent it from overwriting
+    # onnxruntime-directml with plain onnxruntime.
+    os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+
+    try:
+        import onnxruntime
+        if "DmlExecutionProvider" not in onnxruntime.get_available_providers():
+            return  # DirectML not available, nothing to patch
+    except ImportError:
+        return
+
+    from ultralytics.nn.autobackend import AutoBackend
+    _original_init = AutoBackend.__init__
+
+    def _patched_init(self, *args, **kwargs):
+        _original_init(self, *args, **kwargs)
+
+        # After Ultralytics creates the ONNX session with CPUExecutionProvider,
+        # re-create it with DirectML and force dynamic mode.
+        if not getattr(self, "onnx", False) or not hasattr(self, "session"):
+            return
+
+        import onnxruntime as ort
+        if "DmlExecutionProvider" not in ort.get_available_providers():
+            return
+
+        try:
+            w = getattr(self, "w", None)
+            if not w:
+                return
+
+            dml_providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+            self.session = ort.InferenceSession(str(w), providers=dml_providers)
+
+            # Update output names from the new session
+            self.output_names = [x.name for x in self.session.get_outputs()]
+
+            # Force dynamic mode so forward() uses session.run() path
+            # instead of io_binding (which is incompatible with DirectML).
+            self.dynamic = True
+
+            active = self.session.get_providers()
+            logger_uma.info(f"[DirectML] ONNX session using {active}")
+        except Exception as e:
+            logger_uma.warning(f"[DirectML] Failed to create DML session, keeping CPU: {e}")
+
+    AutoBackend.__init__ = _patched_init
+
+
+_patch_ultralytics_for_directml()
+
+from ultralytics.models import YOLO  # import AFTER patch is applied
+
+
+def _prefer_onnx(weights_path: str) -> str:
+    """If an .onnx sibling exists for a .pt file, return it; else return original."""
+    if weights_path.endswith(".pt"):
+        onnx_path = weights_path[:-3] + ".onnx"
+        if os.path.isfile(onnx_path):
+            return onnx_path
+    return weights_path
+
+
 class LocalYOLOEngine(IDetector):
     """
-    Ultralytics-backed detector. Keeps API parity with the interface and mirrors
-    your previous helpers, but encapsulated in a class.
+    Ultralytics-backed detector.
+
+    When ONNX weights exist alongside a .pt file, loads the ONNX model so
+    that onnxruntime-directml can route inference to an AMD/Intel GPU.
+    Falls back gracefully to .pt (PyTorch CPU or CUDA) otherwise.
     """
 
     def __init__(
@@ -29,16 +112,30 @@ class LocalYOLOEngine(IDetector):
         use_gpu: Optional[bool] = None,
     ):
         self.ctrl = ctrl
-        self.weights_path = str(weights or Settings.YOLO_WEIGHTS_URA)
+        raw_weights = str(weights or Settings.YOLO_WEIGHTS_URA)
         self.use_gpu = Settings.USE_GPU if use_gpu is None else bool(use_gpu)
 
-        logger_uma.info(f"Loading YOLO weights from: {self.weights_path}")
-        self.model = YOLO(self.weights_path)
+        # Prefer ONNX for DirectML GPU acceleration (AMD GPUs).
         if self.use_gpu:
+            self.weights_path = _prefer_onnx(raw_weights)
+        else:
+            self.weights_path = raw_weights
+
+        if self.weights_path.endswith(".onnx"):
+            logger_uma.info(f"Loading YOLO ONNX weights (DirectML GPU): {self.weights_path}")
+        else:
+            logger_uma.info(f"Loading YOLO PyTorch weights: {self.weights_path}")
+
+        self.model = YOLO(self.weights_path)
+
+        # For .pt models only: try CUDA (DirectML crashes Ultralytics' PyTorch path)
+        if self.use_gpu and not self.weights_path.endswith(".onnx"):
             try:
-                self.model.to("cuda:0")
+                import torch
+                if torch.cuda.is_available():
+                    self.model.to("cuda:0")
             except Exception as e:
-                logger_uma.error(f"Couldn't set YOLO model to CUDA: {e}")
+                logger_uma.error(f"Couldn't set YOLO to CUDA ({e}). Running on CPU.")
 
     # ---------- internals ----------
     @staticmethod

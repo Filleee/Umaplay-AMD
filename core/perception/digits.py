@@ -129,7 +129,12 @@ def split_digit_boxes(pil_img: Image.Image, max_digits: int = 2) -> List[np.ndar
 class TorchClassifier:
     name: str
     net: torch.nn.Module
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    device: str = ""  # resolved lazily via get_torch_device()
+
+    def __post_init__(self):
+        if not self.device:
+            from core.gpu import get_torch_device
+            self.device = str(get_torch_device())
 
     @torch.no_grad()
     def predict_number(self, pil_img: Image.Image) -> Tuple[int, float]:
