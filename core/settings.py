@@ -165,6 +165,7 @@ class Settings:
     FAST_MODE = False
     USE_FAST_OCR = True
     USE_GPU = True
+    GPU_BACKEND: str = _env("GPU_BACKEND", "auto") or "auto"  # auto | cuda | dml | cpu
     HINT_IS_IMPORTANT = False
     MAX_FAILURE = 20  # integer, no pct
 
@@ -504,6 +505,16 @@ class Settings:
         url = adv.get("externalProcessorUrl")
         if url:
             cls.EXTERNAL_PROCESSOR_URL = url
+        # GPU backend selection (auto / cuda / dml / cpu)
+        gpu_raw = adv.get("gpuBackend")
+        if isinstance(gpu_raw, str) and gpu_raw.strip():
+            cls.GPU_BACKEND = gpu_raw.strip().lower()
+            # Reset cached device so next get_torch_device() re-evaluates
+            try:
+                from core.gpu import reset_device_cache
+                reset_device_cache()
+            except Exception:
+                pass
         # Match UI/schema key: 'autoRestMinimum'
         cls.AUTO_REST_MINIMUM = int(adv.get("autoRestMinimum", cls.AUTO_REST_MINIMUM))
         if "showPresetOverlay" in adv:

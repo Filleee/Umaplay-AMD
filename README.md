@@ -49,6 +49,89 @@ I take no responsibility for bans, issues, or account losses that may result fro
 
 ---
 
+## 🔴 AMD GPU Fork — Experimental
+
+> [!CAUTION]
+> **This is an experimental fork.** It may not work as intended on every system. If you experience issues, please open an issue or fall back to the original repository.
+
+This fork adds **AMD GPU acceleration** (via DirectML) to reduce CPU usage during AI inference. The original repository only supports NVIDIA GPUs (CUDA). If you have an **AMD Radeon GPU** (tested on RX 7900 GRE), this fork offloads the heaviest AI workloads to your GPU.
+
+### What Changed (vs. the Original Repo)
+
+| Change | Description |
+|--------|-------------|
+| **GPU device abstraction** | Added automatic detection of your GPU. The bot now checks for CUDA (NVIDIA), DirectML (AMD/Intel), and falls back to CPU — in that order. |
+| **YOLO detection on GPU** | YOLO object detection (the heaviest workload, ~55% CPU usage in the original) now runs on your AMD GPU via ONNX Runtime + DirectML. |
+| **Digit & spirit classifiers on GPU** | The smaller PyTorch classifiers (stat digits, spirit icons) also run on your AMD GPU via DirectML. |
+| **ONNX model export** | YOLO weights are exported from `.pt` (PyTorch) to `.onnx` (ONNX) format, which enables DirectML GPU execution. |
+| **Ultralytics compatibility patch** | Ultralytics (the YOLO library) only supports NVIDIA CUDA natively. A compatibility patch makes it use DirectML for ONNX models on AMD GPUs. |
+| **Auto-install protection** | Ultralytics tries to auto-install its own `onnxruntime` package, which would overwrite the AMD-compatible `onnxruntime-directml`. This is now blocked. |
+
+### CPU / GPU Breakdown
+
+#### Before (Original Repo — AMD GPU Users)
+
+| Component | Runs On | Notes |
+|-----------|---------|-------|
+| 🧠 YOLO object detection | 🖥️ **CPU** | ~55% CPU usage, no AMD GPU support |
+| 🔢 Digit classifier | 🖥️ **CPU** | Falls back to CPU (no CUDA) |
+| 👻 Spirit classifier | 🖥️ **CPU** | Falls back to CPU (no CUDA) |
+| 📝 PaddleOCR | 🖥️ **CPU** | No AMD GPU support on Windows |
+
+#### After (This Fork — AMD GPU Users)
+
+| Component | Runs On | Notes |
+|-----------|---------|-------|
+| 🧠 YOLO object detection | 🎮 **GPU** (DirectML + ONNX) | Major CPU relief |
+| 🔢 Digit classifier | 🎮 **GPU** (DirectML) | Offloaded via `torch-directml` |
+| 👻 Spirit classifier | 🎮 **GPU** (DirectML) | Offloaded via `torch-directml` |
+| 📝 PaddleOCR | 🖥️ **CPU** | No AMD GPU support (unchanged) |
+
+### Additional Setup for AMD GPU Users
+
+After completing the standard installation (Step 1–3 above), run these extra steps:
+
+```bash
+conda activate env_uma
+pip install -r requirements-amd.txt
+```
+
+Then export the YOLO models to ONNX format (one-time step):
+
+```bash
+python -c "from ultralytics import YOLO; [YOLO(f'models/{m}').export(format='onnx', dynamic=True, simplify=True) for m in ['uma_ura.pt','uma_unity_cup.pt','uma_nav.pt']]"
+```
+
+Set the GPU backend (optional — `auto` is the default and works for most users):
+
+```bash
+set Umaplay_GPU_BACKEND=auto
+python main.py
+```
+
+For full details, see [README.amd_gpu.md](docs/README.amd_gpu.md).
+
+### Files Changed in This Fork
+
+**New files:**
+- `core/gpu.py` — GPU device abstraction (auto-detect CUDA / DirectML / CPU)
+- `requirements-amd.txt` — AMD-specific Python packages
+- `docs/README.amd_gpu.md` — Detailed AMD GPU setup guide
+- `tests/core/test_gpu_device.py` — Unit tests for GPU detection
+
+**Modified files:**
+- `core/perception/yolo/yolo_local.py` — ONNX + DirectML support for YOLO
+- `core/perception/digits.py` — GPU-aware digit classifier
+- `core/perception/unity_cup_spirit_classifier.py` — GPU-aware spirit classifier
+- `core/settings.py` — Added `GPU_BACKEND` setting
+- `server/main_inference.py` — Health endpoint reports GPU status
+
+---
+
+* GPU optimization for **NVIDIA** cards is described in [README.gpu.md](docs/README.gpu.md)
+* GPU optimization for **AMD** cards is described in [README.amd_gpu.md](docs/README.amd_gpu.md)
+---
+
 ## ✨ Features
 
 * **Smart Training** – Chooses the best option using a point system (rainbows, director, hints, etc.).
@@ -78,7 +161,8 @@ Make sure you meet these conditions:
 * Start from the **career lobby screen** (the one with the Tazuna hint icon).
 * Set in Umamusume config **Center Stage** (Race recommendations)
 * It works on the primary display only, don't move the game to second screen.
-* GPU optimization is described in another README file, it is only available for NVIDIA GPU cards
+* GPU optimization for NVIDIA is described in [README.gpu.md](docs/README.gpu.md). AMD GPU users, see the section above.
+
 ---
 
 ## 🚀 Getting Started
@@ -298,7 +382,8 @@ This feature is still experimental, but in my experience, it works quite well.
 
 
 ## Running in GPU
-Follow the instructions in [README.gpu.md](docs/README.gpu.md)
+- **NVIDIA (CUDA):** Follow the instructions in [README.gpu.md](docs/README.gpu.md)
+- **AMD (DirectML):** Follow the instructions in [README.amd_gpu.md](docs/README.amd_gpu.md)
 
 ---
 

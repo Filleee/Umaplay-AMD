@@ -1,0 +1,5 @@
+# AMD GPU (DirectML) support
+# Install on top of the base requirements.txt:
+#   pip install -r requirements-amd.txt
+torch-directml
+onnxruntime-directml
