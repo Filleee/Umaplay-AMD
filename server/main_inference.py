@@ -17,16 +17,21 @@ from collections import OrderedDict
 import hashlib
 
 # Local OCR implementation — prefer ONNX engine (DirectML GPU) when available
+import logging as _logging
+_ocr_log = _logging.getLogger(__name__)
 try:
     from core.perception.ocr.ocr_onnx import OnnxOCREngine, _is_available
 
     if _is_available():
+        _ocr_log.info("[PERCEPTION] Using ONNX OCR engine (DirectML GPU)")
         engine = OnnxOCREngine(use_dml=True)
     else:
         from core.perception.ocr.ocr_local import LocalOCREngine
+        _ocr_log.info("[PERCEPTION] Using PaddleOCR engine (CPU)")
         engine = LocalOCREngine()
 except Exception:
     from core.perception.ocr.ocr_local import LocalOCREngine
+    _ocr_log.info("[PERCEPTION] Using PaddleOCR engine (CPU)")
     engine = LocalOCREngine()
 
 from core.perception.yolo.yolo_local import LocalYOLOEngine

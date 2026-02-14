@@ -137,6 +137,7 @@ def make_ocr_yolo_from_settings(
     if ocr is None:
         from core.perception.ocr.ocr_local import LocalOCREngine
 
+        logger_uma.info("[PERCEPTION] Using PaddleOCR engine (CPU)")
         ocr = LocalOCREngine(
             text_detection_model_name=det_name,
             text_recognition_model_name=rec_name,
