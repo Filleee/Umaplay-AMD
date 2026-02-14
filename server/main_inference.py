@@ -16,8 +16,24 @@ import time
 from collections import OrderedDict
 import hashlib
 
-# Local OCR implementation (host has Paddle installed)
-from core.perception.ocr.ocr_local import LocalOCREngine
+# Local OCR implementation — prefer ONNX engine (DirectML GPU) when available
+import logging as _logging
+_ocr_log = _logging.getLogger(__name__)
+try:
+    from core.perception.ocr.ocr_onnx import OnnxOCREngine, _is_available
+
+    if _is_available():
+        _ocr_log.info("[PERCEPTION] Using ONNX OCR engine (DirectML GPU)")
+        engine = OnnxOCREngine(use_dml=True)
+    else:
+        from core.perception.ocr.ocr_local import LocalOCREngine
+        _ocr_log.info("[PERCEPTION] Using PaddleOCR engine (CPU)")
+        engine = LocalOCREngine()
+except Exception:
+    from core.perception.ocr.ocr_local import LocalOCREngine
+    _ocr_log.info("[PERCEPTION] Using PaddleOCR engine (CPU)")
+    engine = LocalOCREngine()
+
 from core.perception.yolo.yolo_local import LocalYOLOEngine
 from PIL import Image, ImageOps
 from core.settings import Settings
@@ -30,7 +46,6 @@ from core.perception.analyzers.matching.base import (
 from core.perception.unity_cup_spirit_classifier import UnityCupSpiritClassifier
 
 app = FastAPI()
-engine = LocalOCREngine()  # load once; keeps models on CPU/GPU as configured
 
 # run: uvicorn server.main_inference:app --host 0.0.0.0 --port 8001
 

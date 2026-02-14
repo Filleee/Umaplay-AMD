@@ -35,6 +35,7 @@ dev_utils/*
 dev.ipynb
 debug
 runs
+.amd_checked
 
 datasets/coco8/**
 datasets/classifiers/**
