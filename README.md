@@ -133,7 +133,9 @@ For full details, see [README.amd_gpu.md](docs/README.amd_gpu.md).
 
 ### Acknowledgments
 
-This fork relies on the following open-source projects for AMD GPU acceleration:
+This fork is based on the original [Umaplay](https://github.com/Magody/Umaplay) by **Magody** — all game logic, training AI, UI, and NVIDIA GPU support come from the original project.
+
+Additional open-source projects used for AMD GPU acceleration:
 
 | Project | Used For | License |
 |---------|----------|---------|
@@ -146,9 +148,11 @@ This fork relies on the following open-source projects for AMD GPU acceleration:
 
 ---
 
-* GPU optimization for **NVIDIA** cards is described in [README.gpu.md](docs/README.gpu.md)
-* GPU optimization for **AMD** cards is described in [README.amd_gpu.md](docs/README.amd_gpu.md)
----
+### GPU Support
+
+* **NVIDIA (CUDA)** — Supported natively by the original repo. YOLO, digit/spirit classifiers, and PaddleOCR all run on your NVIDIA GPU out of the box. See [README.gpu.md](docs/README.gpu.md) for setup.
+* **AMD (DirectML)** — Added by this fork. All AI components (YOLO, classifiers, OCR) run on your AMD GPU via DirectML + ONNX Runtime. See [README.amd_gpu.md](docs/README.amd_gpu.md) for setup.
+* **CPU** — No GPU required. Everything runs on CPU as fallback if no compatible GPU is detected.
 
 ## ✨ Features
 
