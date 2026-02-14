@@ -121,13 +121,26 @@ def make_ocr_yolo_from_settings(
         return ocr, yolo_engine
 
     logger_uma.info("[PERCEPTION] Using internal processors")
-    from core.perception.ocr.ocr_local import LocalOCREngine
     from core.perception.yolo.yolo_local import LocalYOLOEngine
 
-    ocr = LocalOCREngine(
-        text_detection_model_name=det_name,
-        text_recognition_model_name=rec_name,
-    )
+    # Prefer ONNX OCR engine (RapidOCR + DirectML) for AMD GPU users
+    ocr = None
+    try:
+        from core.perception.ocr.ocr_onnx import OnnxOCREngine, _is_available
+
+        if _is_available():
+            logger_uma.info("[PERCEPTION] Using ONNX OCR engine (DirectML GPU)")
+            ocr = OnnxOCREngine(use_dml=True)
+    except Exception as e:
+        logger_uma.info(f"[PERCEPTION] ONNX OCR not available ({e}), using PaddleOCR")
+
+    if ocr is None:
+        from core.perception.ocr.ocr_local import LocalOCREngine
+
+        ocr = LocalOCREngine(
+            text_detection_model_name=det_name,
+            text_recognition_model_name=rec_name,
+        )
     if weights_str:
         yolo_engine = LocalYOLOEngine(ctrl=ctrl, weights=weights_str)
     else:

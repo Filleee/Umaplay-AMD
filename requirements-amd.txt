@@ -3,3 +3,4 @@
 #   pip install -r requirements-amd.txt
 torch-directml
 onnxruntime-directml
+rapidocr_onnxruntime

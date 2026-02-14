@@ -2,7 +2,7 @@
 
 If you have an **AMD Radeon GPU** (RX 7000/9000 series) and want GPU-accelerated inference, follow this guide.
 
-> **Note**: Only PyTorch-based components (YOLO detection, digit classifier, spirit classifier) benefit from GPU acceleration. PaddleOCR always runs on CPU regardless of GPU backend.
+> **Note**: All AI components (YOLO detection, digit/spirit classifiers, **and OCR**) benefit from GPU acceleration via DirectML. OCR uses RapidOCR (ONNX Runtime) instead of PaddleOCR for GPU support.
 
 ---
 
@@ -15,7 +15,7 @@ conda activate env_uma
 pip install -r requirements-amd.txt
 ```
 
-This installs `torch-directml`, the Microsoft DirectML backend for PyTorch.
+This installs `torch-directml`, `onnxruntime-directml`, and `rapidocr_onnxruntime`.
 
 ---
 

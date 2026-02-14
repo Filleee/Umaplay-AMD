@@ -106,6 +106,35 @@ if not exist ".deps_installed" (
   echo.
 )
 
+:: --- Check for AMD GPU and install DirectML packages ---
+if not exist ".amd_checked" (
+  echo [GPU] Checking for AMD GPU...
+  wmic path win32_VideoController get name 2>nul | findstr /I "AMD Radeon" >nul 2>&1
+  if !ERRORLEVEL! EQU 0 (
+    echo [GPU] AMD Radeon GPU detected!
+    if exist requirements-amd.txt (
+      echo [GPU] Installing AMD GPU acceleration packages...
+      echo       This enables DirectML for GPU-accelerated inference.
+      echo.
+      pip install -r requirements-amd.txt --force-reinstall --no-deps
+      if !ERRORLEVEL! NEQ 0 (
+        echo.
+        echo [Warning] AMD GPU packages failed to install.
+        echo           The bot will still work, but inference runs on CPU.
+        echo.
+      ) else (
+        echo.
+        echo [OK] AMD GPU packages installed
+        echo.
+      )
+    )
+  ) else (
+    echo [GPU] No AMD GPU detected, skipping DirectML setup.
+    echo.
+  )
+  echo done > ".amd_checked"
+)
+
 :: --- Open Web UI ---
 echo [Launch] Opening Web UI...
 start "" "http://127.0.0.1:8000/"
