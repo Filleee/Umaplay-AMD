@@ -87,11 +87,193 @@ from ultralytics.models import YOLO  # import AFTER patch is applied
 
 
 def _prefer_onnx(weights_path: str) -> str:
-    """If an .onnx sibling exists for a .pt file, return it; else return original."""
-    if weights_path.endswith(".pt"):
-        onnx_path = weights_path[:-3] + ".onnx"
-        if os.path.isfile(onnx_path):
-            return onnx_path
+    """
+    1. Check for .half.onnx (FP16) 
+    2. Check for .onnx (FP32) -> Use if present.
+       - If onnxconverter_common is installed, try converting FP32->FP16 automatically.
+    3. Return original (.pt) if no ONNX found.
+    """
+    if not weights_path.endswith(".pt"):
+        return weights_path
+
+    base_path = weights_path[:-3]
+    onnx_half_path = base_path + ".half.onnx"
+    onnx_path = base_path + ".onnx"
+
+    # 1. Best case: FP16 model exists
+    if os.path.isfile(onnx_half_path):
+        # Verify it loads! (User reported crashes with bad conversions)
+        try:
+            import onnxruntime as ort
+            # Try creating session (fast check)
+            ort.InferenceSession(onnx_half_path, providers=["CPUExecutionProvider"])
+            return onnx_half_path
+        except Exception as e:
+            logger_uma.warning(f"[YOLO] Existing FP16 model is invalid ({e}). Deleting and retrying conversion...")
+            try:
+                os.remove(onnx_half_path)
+            except OSError:
+                pass
+
+
+
+    # Helper to patch specific converter bugs (Resize output casts)
+    # Helper to fix stuck ValueInfo metadata (The root cause!)
+    def _fix_resize_casts(model_path):
+        try:
+            import onnx
+            model = onnx.load(model_path)
+            changed = False
+            cast_outputs_to_fix = set()
+            logger_uma.info(f"[YOLO] Patching graph metadata for {os.path.basename(model_path)}...")
+            
+            # 4. Fix Range Constants (Range requires Float inputs, but Constants might be FP16)
+            # This happens even if Range is blocked, because the converter handles constants globally.
+            for node in model.graph.node:
+                if node.op_type == "Range":
+                    for inp_name in node.input:
+                         # Find producer
+                         producer = next((n for n in model.graph.node if any(o == inp_name for o in n.output)), None)
+                         if producer and producer.op_type == "Constant":
+                             val_attr = next((a for a in producer.attribute if a.name == "value"), None)
+                             if val_attr and val_attr.t.data_type == 10: # FP16
+                                 logger_uma.info(f"[YOLO] Patching Range Constant {producer.name}: FP16 -> FLOAT")
+                                 
+                                 # Convert FP16 raw data to Float using numpy (already imported as np)
+                                 # ONNX raw_data is bytes
+                                 raw = val_attr.t.raw_data
+                                 if raw:
+                                     # Load as float16
+                                     data_fp16 = np.frombuffer(raw, dtype=np.float16)
+                                     # Convert to float32
+                                     data_fp32 = data_fp16.astype(np.float32)
+                                     # Update attribute
+                                     val_attr.t.raw_data = data_fp32.tobytes()
+                                     val_attr.t.data_type = 1
+                                     changed = True
+                                     
+                                     # Mark output for metadata stripping
+                                     for out in producer.output:
+                                         cast_outputs_to_fix.add(out)
+
+            # 1. Fix Pre-Resize Casts (Inputs to blocked Resize/Upsample must be FLOAT)
+            for node in model.graph.node:
+                if node.op_type in ["Resize", "Upsample"]:
+                    for inp_name in node.input:
+                         producer = next((n for n in model.graph.node if any(o == inp_name for o in n.output)), None)
+                         if producer and producer.op_type == "Cast":
+                             to_attr = next((a for a in producer.attribute if a.name == "to"), None)
+                             if to_attr and to_attr.i == 10:
+                                 logger_uma.info(f"[YOLO] Patching Pre-Resize Cast {producer.name}: FLOAT16 -> FLOAT")
+                                 to_attr.i = 1 # Change to Float
+                                 changed = True
+                                 # Mark output for metadata stripping
+                                 for out in producer.output:
+                                     cast_outputs_to_fix.add(out)
+
+            # 2. Fix Graph Output Casts (Model Output must be FLOAT for Post-Process)
+            graph_output_names = {out.name for out in model.graph.output}
+            for node in model.graph.node:
+                if node.op_type == "Cast":
+                     for out in node.output:
+                         if out in graph_output_names:
+                             to_attr = next((a for a in node.attribute if a.name == "to"), None)
+                             if to_attr and to_attr.i == 10:
+                                 logger_uma.info(f"[YOLO] Patching Graph Output Cast {node.name}: FLOAT16 -> FLOAT")
+                                 to_attr.i = 1
+                                 changed = True
+                                 # Mark output for metadata stripping
+                                 cast_outputs_to_fix.add(out)
+
+            # 3. Universal Metadata Fix (The "Nuclear Option")
+            # The converter messes up ValueInfo for both FP16->Float and Float->FP16 casts.
+            # We simply strip ValueInfo for ALL Cast outputs to force Runtime to infer truth from Node attributes.
+            for node in model.graph.node:
+                if node.op_type == "Cast":
+                    for out_name in node.output:
+                        cast_outputs_to_fix.add(out_name)
+            
+            # Remove stale ValueInfo that claims these outputs are still FLOAT (or FP16 if we forced Float)
+            new_vi = []
+            for vi in model.graph.value_info:
+                if vi.name in cast_outputs_to_fix and vi.name not in graph_output_names:
+                    logger_uma.debug(f"[YOLO] Removing stale ValueInfo for {vi.name} (metadata cleanup)")
+                    changed = True
+                else:
+                    new_vi.append(vi)
+            
+            if changed:
+                del model.graph.value_info[:]
+                model.graph.value_info.extend(new_vi)
+                onnx.save(model, model_path)
+                logger_uma.info("[YOLO] Fixed stale graph metadata.")
+            else:
+                 logger_uma.info("[YOLO] No stale metadata found.")
+
+        except Exception as e:
+            logger_uma.warning(f"[YOLO] Graph patching failed: {e}")
+
+    # Helper to validate model
+    def _validate_onnx(path):
+        import onnxruntime as ort
+        ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+
+    # 2. FP32 model exists -> Convert
+    if os.path.isfile(onnx_path):
+        try:
+            import onnx
+            from onnxconverter_common import float16
+            import warnings
+            
+            # Suppress the "float32 number ... will be truncated" warnings
+            warnings.filterwarnings("ignore", category=UserWarning, module="onnxconverter_common")
+
+            logger_uma.info(f"[YOLO] Converting {onnx_path} to FP16 (saves VRAM)...")
+            model = onnx.load(onnx_path)
+            
+            # Attempt 1: Safe conversion (keep I/O types + block problematic Ops)
+            # Blocking Resize/Upsample fixes the "Type Error: Type (tensor(float)) ... expected (tensor(float16))"
+            try:
+                model_fp16 = float16.convert_float_to_float16(
+                    model, 
+                    keep_io_types=True,
+                    op_block_list=["Resize", "Upsample", "Range"]
+                )
+                onnx.save(model_fp16, onnx_half_path)
+                _fix_resize_casts(onnx_half_path) # <--- Apply patch
+                _validate_onnx(onnx_half_path)
+                logger_uma.info(f"[YOLO] Saved FP16 model: {onnx_half_path}")
+                return onnx_half_path
+            except Exception as e1:
+                logger_uma.debug(f"[YOLO] Standard FP16 conversion failed validaton: {e1}")
+                # Retry with implicit shape inference disabled (helps with other topology issues)
+                try:
+                    logger_uma.info(f"[YOLO] Retrying conversion with disable_shape_infer=True...")
+                    model_fp16 = float16.convert_float_to_float16(
+                        model, 
+                        keep_io_types=True, 
+                        disable_shape_infer=True,
+                        op_block_list=["Resize", "Upsample", "Range"]
+                    )
+                    onnx.save(model_fp16, onnx_half_path)
+                    _fix_resize_casts(onnx_half_path) # <--- Apply patch
+                    _validate_onnx(onnx_half_path)
+                    logger_uma.info(f"[YOLO] Saved FP16 model (strategy 2): {onnx_half_path}")
+                    return onnx_half_path
+                except Exception as e2:
+                    logger_uma.error(f"[YOLO] All FP16 conversion attempts failed validation. Last error: {e2}")
+                    if os.path.exists(onnx_half_path):
+                        os.remove(onnx_half_path)
+        
+        except ImportError:
+             logger_uma.warning("[YOLO] 'onnxconverter-common' not found...")
+        except Exception as e:
+             logger_uma.warning(f"[YOLO] Conversion crashed: {e}")
+
+        logger_uma.info("[YOLO] Using original FP32 model.")
+        return onnx_path
+
+    # 3. Only .pt exists
     return weights_path
 
 

@@ -5,3 +5,4 @@ torch-directml
 onnxruntime-directml
 rapidocr_onnxruntime
 huggingface_hub
+onnxconverter-common

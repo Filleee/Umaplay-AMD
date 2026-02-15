@@ -93,6 +93,7 @@ if not exist ".deps_installed" (
       echo   conda activate env_uma
       echo   pip install -r requirements.txt
       echo.
+      echo.
       pause
       exit /b 1
     )
@@ -104,6 +105,17 @@ if not exist ".deps_installed" (
   echo.
   echo [OK] Dependencies installed
   echo.
+)
+
+:: --- Specific update: Install onnxconverter-common for VRAM optimization (AMD) ---
+wmic path win32_VideoController get name 2>nul | findstr /I "AMD Radeon" >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+  pip show onnxconverter-common >nul 2>&1
+  if !ERRORLEVEL! NEQ 0 (
+     echo [Update] Installing VRAM optimization tool 'onnxconverter-common'...
+     pip install onnxconverter-common
+     echo.
+  )
 )
 
 :: --- Check for AMD GPU and install DirectML packages ---

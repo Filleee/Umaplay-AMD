@@ -107,7 +107,10 @@ class UnityCupSpiritClassifier:
         from core.gpu import get_torch_device
         device = get_torch_device()
 
-        ckpt = torch.load(bundle_path, map_location=device, weights_only=False)
+        # DirectML (privateuseone) crashes if passed to map_location, so force CPU load
+        # For CUDA/CPU, we can load directly to the device.
+        load_loc = "cpu" if device.type == "privateuseone" else device
+        ckpt = torch.load(bundle_path, map_location=load_loc, weights_only=False)
         classes = list(ckpt["classes"])
         img_size = tuple(ckpt.get("img_size", (64, 64)))
         arch = ckpt.get("arch", "TinyCNN_SiLU_v1")
