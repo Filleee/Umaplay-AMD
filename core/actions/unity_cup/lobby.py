@@ -177,6 +177,56 @@ class LobbyFlowUnityCup(LobbyFlow):
                 self._skip_race_once = False
                 return "TO_RACE", reason
             else:
+                # --- OCR retry: re-screenshot and re-parse date before
+                # accepting the suppression.  The first-junior-date guard
+                # is particularly sensitive to OCR misreads on the date
+                # pill; a fresh capture often resolves the error. --------
+                if is_first_junior_date:
+                    _MAX_DATE_RETRIES = 2
+                    for _retry_i in range(1, _MAX_DATE_RETRIES + 1):
+                        import time as _time
+                        _time.sleep(0.3)
+                        retry_img, retry_dets = collect(
+                            self.yolo_engine,
+                            imgsz=self.waiter.cfg.imgsz,
+                            conf=self.waiter.cfg.conf,
+                            iou=self.waiter.cfg.iou,
+                            tag="lobby_date_retry",
+                            agent=self.waiter.cfg.agent,
+                        )
+                        self._process_date_info(retry_img, retry_dets)
+                        logger_uma.info(
+                            "[lobby] Date retry %d/%d: %s | raw: %s",
+                            _retry_i, _MAX_DATE_RETRIES,
+                            self.state.date_info,
+                            self.state.career_date_raw,
+                        )
+                        # Re-evaluate the guard with the fresh date
+                        is_first_junior_date = (
+                            bool(self.state.date_info)
+                            and date_is_confident(self.state.date_info)
+                            and self.state.date_info.year_code == 1
+                            and self.state.date_info.month == 7
+                            and self.state.date_info.half == 1
+                        )
+                        if not is_first_junior_date:
+                            logger_uma.info(
+                                "[lobby] Date retry cleared first_junior_date guard → proceeding to race"
+                            )
+                            break
+
+                    # If retry cleared the guard, go to race
+                    if not is_first_junior_date and not self._skip_race_once:
+                        reason = f"Planned race (after date retry): {self.state.planned_race_name}"
+                        self._log_planned_race_decision(
+                            action="enter_race_after_retry",
+                            plan_name=self.state.planned_race_name,
+                            reason="date_retry_cleared",
+                        )
+                        self._skip_race_once = False
+                        return "TO_RACE", reason
+
+                # Still suppressed after retries (or suppressed by skip_guard)
                 suppression_reasons = []
                 if is_first_junior_date:
                     suppression_reasons.append("first_junior_date")
