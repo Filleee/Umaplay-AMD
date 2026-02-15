@@ -124,6 +124,39 @@ def _choices(parsed: List[DetectionDict], *, conf_min: float) -> List[DetectionD
     ]
 
 
+# Known banner headers that indicate the event *type*, not the event *name*.
+_KNOWN_BANNER_HEADERS = [
+    "main scenario event",
+    "support card event",
+    "trainee event",
+    "scenario event",
+]
+
+
+def _strip_header_from_banner_text(full_text: str) -> str:
+    """Remove known header text from a full-banner OCR result to isolate the event name."""
+    lowered = full_text.lower()
+    for header in _KNOWN_BANNER_HEADERS:
+        idx = lowered.find(header)
+        if idx != -1:
+            remainder = full_text[idx + len(header):].strip()
+            if remainder:
+                return remainder
+    return full_text
+
+
+def _is_known_header(text: str) -> bool:
+    """Check if an OCR result is just a known banner header (not the actual event name)."""
+    norm = text.strip().lower()
+    if not norm:
+        return False
+    for header in _KNOWN_BANNER_HEADERS:
+        # Check if the text essentially IS the header (allow minor OCR noise)
+        if header in norm or norm in header:
+            return True
+    return False
+
+
 def _extract_title_description_from_banner(
     ocr: OCRInterface,
     frame: Image.Image,
@@ -169,6 +202,19 @@ def _extract_title_description_from_banner(
 
     title_text = ocr.text(title_zone)
     description_text = ocr.text(description_zone)
+
+    # Fallback: if the title zone captured a known header (e.g. "Main Scenario Event")
+    # and the description zone is empty, the actual event name might be sitting at the
+    # split boundary.  OCR the full banner and strip the header prefix to recover it.
+    if _is_known_header(title_text) and not description_text.strip():
+        full_banner_text = ocr.text(banner)
+        stripped = _strip_header_from_banner_text(full_banner_text)
+        if stripped and not _is_known_header(stripped):
+            description_text = stripped
+            logger_uma.debug(
+                "[event] Full-banner fallback recovered event name: '%s'",
+                stripped,
+            )
 
     return title_text, description_text
 
@@ -273,15 +319,20 @@ class EventFlow:
 
         # 3) Build query for retriever
         type_hint = None
-        if "support" in ocr_title.lower():
+        title_lower = ocr_title.lower()
+        if "support" in title_lower:
             type_hint = "support"
-        elif "trainee" in ocr_title.lower():
+        elif "trainee" in title_lower:
             type_hint = "trainee"
+        elif "scenario" in title_lower or "main scenario" in title_lower:
+            type_hint = "scenario"
         portrait_img: Optional[Image.Image] = None
         if card is not None:
             portrait_img = _crop(frame, tuple(card["xyxy"]))
 
-        # Description holds the most important part
+        # Description holds the most important part (the actual event name).
+        # If the title zone captured only a known header like "Main Scenario Event",
+        # use the description (which should contain the real event name).
         ocr_query = ocr_description or ocr_title or ""
         q = Query(
             ocr_title=ocr_query,
