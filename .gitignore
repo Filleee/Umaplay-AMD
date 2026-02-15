@@ -42,6 +42,7 @@ datasets/classifiers/**
 datasets/uma_nav/*
 models/base/*
 models/*.onnx
+models/ocr_v5/
 datasets/uma/*
 !datasets/uma/raw
 datasets/uma/raw/*

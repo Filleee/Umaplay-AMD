@@ -107,7 +107,7 @@ class UnityCupSpiritClassifier:
         from core.gpu import get_torch_device
         device = get_torch_device()
 
-        ckpt = torch.load(bundle_path, map_location=device)
+        ckpt = torch.load(bundle_path, map_location=device, weights_only=False)
         classes = list(ckpt["classes"])
         img_size = tuple(ckpt.get("img_size", (64, 64)))
         arch = ckpt.get("arch", "TinyCNN_SiLU_v1")
