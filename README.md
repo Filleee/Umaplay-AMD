@@ -70,6 +70,7 @@ This fork adds **AMD GPU acceleration** (via DirectML) to reduce CPU usage durin
 | **ONNX model export** | YOLO weights are exported from `.pt` (PyTorch) to `.onnx` (ONNX) format, which enables DirectML GPU execution. |
 | **Ultralytics compatibility patch** | Ultralytics (the YOLO library) only supports NVIDIA CUDA natively. A compatibility patch makes it use DirectML for ONNX models on AMD GPUs. |
 | **Auto-install protection** | Ultralytics tries to auto-install its own `onnxruntime` package, which would overwrite the AMD-compatible `onnxruntime-directml`. This is now blocked. |
+| **FP16 Conversion (Experimental)** | Automatically converts standard YOLO models to **Mixed Precision (FP16)** to save ~50% VRAM. Works on NVIDIA/AMD/Intel. |
 | **Startup banner** | On boot, the OCR engine logs a detailed table showing model version, ONNX Runtime version, DirectML status, model paths, and file sizes. |
 
 ### CPU / GPU Breakdown
@@ -163,6 +164,7 @@ Additional open-source projects used for AMD GPU acceleration:
 * **NVIDIA (CUDA)** — Supported natively by the original repo. YOLO, digit/spirit classifiers, and PaddleOCR all run on your NVIDIA GPU out of the box. See [README.gpu.md](docs/README.gpu.md) for setup.
 * **AMD (DirectML)** — Added by this fork. All AI components (YOLO, classifiers, OCR) run on your AMD GPU via DirectML + ONNX Runtime. See [README.amd_gpu.md](docs/README.amd_gpu.md) for setup.
 * **CPU** — No GPU required. Everything runs on CPU as fallback if no compatible GPU is detected.
+* **Low VRAM Mode (Experimental)** – Auto-converts AI models to FP16 to reduce memory usage by half.
 
 ## ✨ Features
 
