@@ -2,6 +2,8 @@
 
 > **Latest Update (v0.4.0)**: Unity Cup strategy, PAL policy, ADB mode, preset groups, and smarter training/race handling.
 >
+> **AMD Fork Update**: PP-OCRv5 auto-download for better accuracy on small game text, date OCR retry to prevent stuck race suppression, detailed startup banner.
+>
 > _Previous updates_: v0.3.3 bugfixes, v0.3.2 skill memory + data scraper, v0.3.1 remote template matching fixes.
 
 
@@ -62,11 +64,13 @@ This fork adds **AMD GPU acceleration** (via DirectML) to reduce CPU usage durin
 |--------|-------------|
 | **GPU device abstraction** | Added automatic detection of your GPU. The bot now checks for CUDA (NVIDIA), DirectML (AMD/Intel), and falls back to CPU — in that order. |
 | **YOLO detection on GPU** | YOLO object detection (the heaviest workload, ~55% CPU usage in the original) now runs on your AMD GPU via ONNX Runtime + DirectML. |
-| **OCR on GPU** | PaddleOCR replaced by RapidOCR (PP-OCRv4 ONNX models) for GPU-accelerated text recognition via DirectML. |
+| **OCR on GPU (PP-OCRv5)** | PaddleOCR replaced by RapidOCR with **PP-OCRv5** ONNX models (auto-downloaded on first run) for improved accuracy on small/stylized game text + DirectML GPU acceleration. |
+| **Date OCR retry** | When the date guard triggers race suppression, the bot now re-screenshots and re-parses the date up to 2× before accepting — prevents stuck races from OCR misreads. |
 | **Digit & spirit classifiers on GPU** | The smaller PyTorch classifiers (stat digits, spirit icons) also run on your AMD GPU via DirectML. |
 | **ONNX model export** | YOLO weights are exported from `.pt` (PyTorch) to `.onnx` (ONNX) format, which enables DirectML GPU execution. |
 | **Ultralytics compatibility patch** | Ultralytics (the YOLO library) only supports NVIDIA CUDA natively. A compatibility patch makes it use DirectML for ONNX models on AMD GPUs. |
 | **Auto-install protection** | Ultralytics tries to auto-install its own `onnxruntime` package, which would overwrite the AMD-compatible `onnxruntime-directml`. This is now blocked. |
+| **Startup banner** | On boot, the OCR engine logs a detailed table showing model version, ONNX Runtime version, DirectML status, model paths, and file sizes. |
 
 ### CPU / GPU Breakdown
 
@@ -86,7 +90,7 @@ This fork adds **AMD GPU acceleration** (via DirectML) to reduce CPU usage durin
 | 🧠 YOLO object detection | 🎮 **GPU** (DirectML + ONNX) | Major CPU relief |
 | 🔢 Digit classifier | 🎮 **GPU** (DirectML) | Offloaded via `torch-directml` |
 | 👻 Spirit classifier | 🎮 **GPU** (DirectML) | Offloaded via `torch-directml` |
-| 📝 OCR (RapidOCR) | 🎮 **GPU** (DirectML + ONNX) | Replaces PaddleOCR for AMD users |
+| 📝 OCR (RapidOCR + PP-OCRv5) | 🎮 **GPU** (DirectML + ONNX) | Auto-downloads v5 models on first run; replaces PaddleOCR |
 
 ### Additional Setup for AMD GPU Users
 
@@ -110,26 +114,31 @@ set Umaplay_GPU_BACKEND=auto
 python main.py
 ```
 
+> **Note:** The first time you run the bot, it will automatically download PP-OCRv5 ONNX models (~96 MB) from HuggingFace. This is a one-time download; subsequent runs load from the local cache in `models/ocr_v5/`.
+
 For full details, see [README.amd_gpu.md](docs/README.amd_gpu.md).
 
 ### Files Changed in This Fork
 
 **New files:**
 - `core/gpu.py` — GPU device abstraction (auto-detect CUDA / DirectML / CPU)
-- `core/perception/ocr/ocr_onnx.py` — ONNX-based OCR engine (RapidOCR + DirectML)
-- `requirements-amd.txt` — AMD-specific Python packages
+- `core/perception/ocr/ocr_onnx.py` — ONNX-based OCR engine (RapidOCR + PP-OCRv5 + DirectML) with auto-download from HuggingFace
+- `requirements-amd.txt` — AMD-specific Python packages (includes `huggingface_hub`)
 - `docs/README.amd_gpu.md` — Detailed AMD GPU setup guide
 - `tests/core/test_gpu_device.py` — Unit tests for GPU detection
-- `tests/test_ocr_onnx_smoke.py` — Smoke tests for the ONNX OCR engine
+- `tests/test_ocr_onnx_smoke.py` — Smoke tests for the ONNX OCR engine (v5 model verification)
 
 **Modified files:**
 - `core/perception/yolo/yolo_local.py` — ONNX + DirectML support for YOLO
 - `core/perception/digits.py` — GPU-aware digit classifier
-- `core/perception/unity_cup_spirit_classifier.py` — GPU-aware spirit classifier
+- `core/perception/unity_cup_spirit_classifier.py` — GPU-aware spirit classifier (silenced `torch.load` warning)
 - `core/settings.py` — Added `GPU_BACKEND` setting
 - `main.py` — Auto-selects ONNX OCR engine when DirectML is available
 - `server/main_inference.py` — Health endpoint reports GPU status; ONNX OCR auto-selection
 - `run_uma.bat` — Auto-detects AMD GPU and installs DirectML packages
+- `core/actions/unity_cup/lobby.py` — Date OCR retry (re-screenshots 2× before suppressing planned races)
+- `core/actions/ura/lobby.py` — Date OCR retry (same fix for URA scenario)
+- `.gitignore` — Added `models/ocr_v5/` for auto-downloaded model files
 
 ### Acknowledgments
 
@@ -139,8 +148,9 @@ Additional open-source projects used for AMD GPU acceleration:
 
 | Project | Used For | License |
 |---------|----------|---------|
-| [RapidOCR](https://github.com/RapidAI/RapidOCR) by RapidAI | ONNX-based OCR engine wrapping PP-OCRv4 models | Apache 2.0 |
-| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) by Baidu | Original PP-OCRv4 detection & recognition models | Apache 2.0 |
+| [RapidOCR](https://github.com/RapidAI/RapidOCR) by RapidAI | ONNX-based OCR engine wrapping PaddleOCR models | Apache 2.0 |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) by Baidu | PP-OCRv4/v5 detection & recognition models | Apache 2.0 |
+| [paddleocr-onnx](https://huggingface.co/monkt/paddleocr-onnx) by monkt | Pre-converted PP-OCRv5 ONNX models (auto-downloaded) | Apache 2.0 |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | Cross-platform neural network inference with DirectML | MIT |
 | [DirectML](https://github.com/microsoft/DirectML) by Microsoft | GPU acceleration for AMD/Intel/Qualcomm on Windows | MIT |
 | [torch-directml](https://github.com/microsoft/DirectML/tree/master/PyTorch) by Microsoft | DirectML backend for PyTorch | MIT |
@@ -434,8 +444,8 @@ The bot uses multiple AI components to make decisions:
 * **Logistic Regression Classifier**
   Detects whether buttons are active or inactive.
 
-* **OCR (PaddleOCR)**
-  Reads numbers, goals, and text with fallback logic.
+* **OCR (PaddleOCR / RapidOCR)**
+  Reads numbers, goals, and text with fallback logic. AMD users get PP-OCRv5 models via RapidOCR for better accuracy on small text.
 
 * **Scoring System**
   Evaluates training tiles based on support cards, rainbows, hints, and risk.
