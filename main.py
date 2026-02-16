@@ -12,6 +12,11 @@ import sys
 from pathlib import Path
 import shutil
 import queue
+import os
+
+# Fix for Paddle 3.x + oneDNN crash (ConvertPirAttribute2RuntimeAttribute)
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
 
 from core.actions.ura.agent import AgentURA
 from core.actions.unity_cup.agent import AgentUnityCup

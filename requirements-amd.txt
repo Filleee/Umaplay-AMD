@@ -1,0 +1,15 @@
+# AMD GPU Requirements - PaddleOCR Limits
+#
+# NOTICE: 
+# This file is intended for use AFTER manually installing PyTorch ROCm.
+# Do NOT run this before following the instructions in docs/README.amd_gpu.md!
+#
+# It installs the CPU version of PaddlePaddle because official Windows ROCm binaries are rare.
+# This prevents pip from accidentally pulling in the CUDA version of Paddle or overwriting your PyTorch ROCm.
+
+paddlepaddle==3.2.0
+paddleocr==3.3.0
+paddlex==3.3.6
+
+# Base dependencies (excluding torch/torchvision/torchaudio which you must install manually)
+-r requirements_no_gpu.txt
