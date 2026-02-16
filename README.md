@@ -78,7 +78,10 @@ Make sure you meet these conditions:
 * Start from the **career lobby screen** (the one with the Tazuna hint icon).
 * Set in Umamusume config **Center Stage** (Race recommendations)
 * It works on the primary display only, don't move the game to second screen.
-* GPU optimization is described in another README file, it is only available for NVIDIA GPU cards
+* GPU optimizations:
+    * **NVIDIA**: Detailed in [README.gpu.md](docs/README.gpu.md).
+    * **AMD (Experimental)**: Detailed in [README.amd_gpu.md](docs/README.amd_gpu.md).
+      > ⚠️ **AMD Users**: This experimental ROCm fork has been tested on **RX 7900 GRE**. It offloads YOLO to the GPU (2-3x speedup) but runs OCR on CPU to avoid crashes. See the guide for specific installation steps.
 ---
 
 ## 🚀 Getting Started
@@ -114,6 +117,9 @@ Make sure you meet these conditions:
    ```
 
 3. **Set Up Python Environment**
+
+   > ⚠️ **AMD GPU Users**: Stop here! Please follow the instructions in [docs/README.amd_gpu.md](docs/README.amd_gpu.md) to set up your environment with ROCm support. Do not create the Python 3.10 environment below.
+
    ```bash
    conda create -n env_uma python==3.10
    conda activate env_uma

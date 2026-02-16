@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
+import torch
 from ultralytics.models import YOLO
 
 from core.perception.yolo.interface import IDetector
@@ -36,9 +37,20 @@ class LocalYOLOEngine(IDetector):
         self.model = YOLO(self.weights_path)
         if self.use_gpu:
             try:
-                self.model.to("cuda:0")
+                # Basic check for CUDA/ROCm
+                if torch.cuda.is_available():
+                    device_name = torch.cuda.get_device_name(0)
+                    is_rocm = hasattr(torch.version, "hip") and torch.version.hip
+                    logger_uma.info(
+                        f"YOLO -> Using GPU: {device_name} (ROCm={is_rocm})"
+                    )
+                    self.model.to("cuda:0")
+                else:
+                    logger_uma.warning("YOLO -> GPU was requested but torch.cuda.is_available() is False. Using CPU.")
+                    self.model.to("cpu")
             except Exception as e:
-                logger_uma.error(f"Couldn't set YOLO model to CUDA: {e}")
+                logger_uma.error(f"Couldn't set YOLO model to CUDA/ROCm: {e}")
+                self.model.to("cpu")
 
     # ---------- internals ----------
     @staticmethod

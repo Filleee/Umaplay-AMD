@@ -12,6 +12,19 @@ from core.types import OCRItem
 # Disable if facing multi-process error
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"
+# Fix for Paddle 3.x + oneDNN crash (ConvertPirAttribute2RuntimeAttribute)
+# We only apply this if we detect we are likely on an AMD ROCm setup, because
+# disabling oneDNN/MKLDNN on Intel/NVIDIA CPUs can hurt OCR performance.
+try:
+    import torch
+    # Simple heuristic: if torch has 'hip' version, we are on ROCm
+    is_rocm = hasattr(torch.version, "hip") and torch.version.hip
+except ImportError:
+    is_rocm = False
+
+if is_rocm:
+    os.environ["FLAGS_use_mkldnn"] = "0"
+    os.environ["FLAGS_enable_pir_api"] = "0"
 
 from paddleocr import PaddleOCR
 import paddle
@@ -52,12 +65,22 @@ class LocalOCREngine(OCRInterface):
         requested_gpu = bool(gpu)
         device_str = f"gpu:{int(0)}" if requested_gpu else "cpu"
 
-        # Try to warn/auto-fallback if CUDA isn’t available
+        # Try to warn/auto-fallback if CUDA/ROCm isn’t available
         try:
-            has_cuda = bool(getattr(paddle, "is_compiled_with_cuda", lambda: False)())
+            has_cuda = False
+            if hasattr(paddle, "device"):
+                if hasattr(paddle.device, "is_compiled_with_cuda"):
+                    has_cuda = paddle.device.is_compiled_with_cuda()
+                if not has_cuda and hasattr(paddle.device, "is_compiled_with_rocm"):
+                    has_cuda = paddle.device.is_compiled_with_rocm()
+
+            # Fallback for older paddle versions if needed
+            if not has_cuda and hasattr(paddle, "is_compiled_with_cuda"):
+                 has_cuda = paddle.is_compiled_with_cuda()
+
             if requested_gpu and not has_cuda:
                 logger_uma.warning(
-                    "OCRInterface: GPU requested but PaddlePaddle is not CUDA-enabled → falling back to CPU."
+                    "OCRInterface: GPU requested but PaddlePaddle is not CUDA/ROCm-enabled → falling back to CPU."
                 )
                 device_str = "cpu"
         except Exception:
@@ -91,12 +114,12 @@ class LocalOCREngine(OCRInterface):
             init_kwargs["lang"] = self.lang
         try:
             # Newer API (device=...)
-            self.reader = PaddleOCR(device=self.device, enable_hpi=False, **init_kwargs)
+            self.reader = PaddleOCR(device=self.device, enable_hpi=False, enable_mkldnn=False, **init_kwargs)
         except TypeError:
             # Older API style (use_gpu flag)
             use_gpu = self.device.startswith("gpu")
             try:
-                self.reader = PaddleOCR(lang=self.lang, use_gpu=use_gpu)
+                self.reader = PaddleOCR(lang=self.lang, use_gpu=use_gpu, enable_mkldnn=False)
             except Exception as e:
                 logger_uma.exception(
                     "OCRInterface: failed to initialize PaddleOCR (use_gpu=%s). Error: %s",
@@ -112,7 +135,7 @@ class LocalOCREngine(OCRInterface):
                 e,
             )
             try:
-                self.reader = PaddleOCR(lang=self.lang, device="cpu", enable_hpi=False)
+                self.reader = PaddleOCR(lang=self.lang, device="cpu", enable_hpi=False, enable_mkldnn=False)
                 self.device = "cpu"
             except Exception as e2:
                 # Helpful guidance if it's the well-known Paddle/PaddleX mismatch
