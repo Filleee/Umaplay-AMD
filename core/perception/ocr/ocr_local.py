@@ -112,14 +112,19 @@ class LocalOCREngine(OCRInterface):
         )
         if not text_detection_model_name and not text_recognition_model_name:
             init_kwargs["lang"] = self.lang
+        # Decide if we can use MKLDNN (CPU acceleration).
+        # On ROCm/Windows, it must be False to avoid crash.s
+        # On Intel/NVIDIA CPU, it should be True for speed.
+        use_mkldnn = not is_rocm
+
         try:
             # Newer API (device=...)
-            self.reader = PaddleOCR(device=self.device, enable_hpi=False, enable_mkldnn=False, **init_kwargs)
+            self.reader = PaddleOCR(device=self.device, enable_hpi=False, enable_mkldnn=use_mkldnn, **init_kwargs)
         except TypeError:
             # Older API style (use_gpu flag)
             use_gpu = self.device.startswith("gpu")
             try:
-                self.reader = PaddleOCR(lang=self.lang, use_gpu=use_gpu, enable_mkldnn=False)
+                self.reader = PaddleOCR(lang=self.lang, use_gpu=use_gpu, enable_mkldnn=use_mkldnn)
             except Exception as e:
                 logger_uma.exception(
                     "OCRInterface: failed to initialize PaddleOCR (use_gpu=%s). Error: %s",
@@ -135,7 +140,7 @@ class LocalOCREngine(OCRInterface):
                 e,
             )
             try:
-                self.reader = PaddleOCR(lang=self.lang, device="cpu", enable_hpi=False, enable_mkldnn=False)
+                self.reader = PaddleOCR(lang=self.lang, device="cpu", enable_hpi=False, enable_mkldnn=use_mkldnn)
                 self.device = "cpu"
             except Exception as e2:
                 # Helpful guidance if it's the well-known Paddle/PaddleX mismatch
